@@ -1,0 +1,24 @@
+import os
+
+projectName = 'clipsparser'
+
+coreDir = os.path.join(builder.currentSourcePath, os.pardir, 'parser')
+
+project = Extension.HL2Project(builder, projectName + '.ext')
+
+project.sources += [
+  os.path.join(Extension.sm_root, 'public', 'smsdk_ext.cpp'),
+  'extension.cpp',
+  os.path.join(coreDir, 'clip_core.cpp'),
+  os.path.join(coreDir, 'lzma', 'LzmaDec.c'),
+]
+
+for sdk_name in Extension.sdks:
+  sdk = Extension.sdks[sdk_name]
+  for cxx in Extension.targets:
+    if not Extension.IsTargetSupported(cxx, sdk):
+      continue
+    binary = Extension.HL2ExtConfig(project, builder, cxx, projectName + '.ext', sdk)
+    binary.compiler.cxxincludes += [builder.currentSourcePath, coreDir]
+
+Extension.extensions += builder.Add(project)

@@ -1,0 +1,189 @@
+import os, sys
+
+class SDK(object):
+  def __init__(self, name, sdk_define, engine_code, folder, platforms):
+    self.name = name
+    self.envvar = sdk_define
+    self.code = engine_code
+    self.folder = 'hl2sdk-' + folder
+    self.ext = folder
+    self.platforms = platforms
+    self.path = None
+
+  def shouldBuild(self, targets):
+    for cxx in targets:
+      if cxx.target.platform in self.platforms:
+        return True
+    return False
+
+PossibleSDKs = {
+  'css': SDK('Counter-Strike: Source', 'HL2SDKCSS', '6', 'css', ['windows', 'linux', 'mac']),
+}
+
+def ResolveEnvPath(env, folder):
+  if env in os.environ:
+    path = os.environ[env]
+    return path if os.path.isdir(path) else None
+
+  head = os.getcwd()
+  oldhead = None
+  while head != oldhead:
+    candidate = os.path.join(head, folder)
+    if os.path.isdir(candidate):
+      return candidate
+    oldhead = head
+    head, _ = os.path.split(head)
+  return None
+
+def Normalize(path):
+  return os.path.abspath(os.path.normpath(path))
+
+class ExtensionConfig(object):
+  def __init__(self):
+    self.sdks = {}
+    self.sm_root = None
+    self.mms_root = None
+    self.extensions = []
+    self.targets = []
+
+    archs = builder.options.targets.split(',') if builder.options.targets else ['x86']
+    for arch in archs:
+      try:
+        cxx = builder.DetectCxx(target_arch=arch)
+      except Exception as e:
+        if builder.options.targets:
+          raise
+        print('Skipping target {0}: {1}'.format(arch, e))
+        continue
+      self.targets.append(cxx)
+
+    if not self.targets:
+      raise Exception('No suitable C++ compiler was found.')
+
+  @property
+  def tag(self):
+    return 'Debug' if builder.options.debug else 'Release'
+
+  def detectSDKs(self):
+    requested = builder.options.sdks.split(',')
+    want_all = requested[0] == 'all'
+    want_present = requested[0] == 'present'
+
+    for name, sdk in PossibleSDKs.items():
+      if not sdk.shouldBuild(self.targets):
+        continue
+      if builder.options.hl2sdk_root:
+        path = os.path.join(builder.options.hl2sdk_root, sdk.folder)
+      else:
+        path = ResolveEnvPath(sdk.envvar, sdk.folder)
+
+      if not path or not os.path.isdir(path):
+        if want_all or name in requested:
+          raise Exception('Could not find HL2SDK for "{0}" (looked for {1})'.format(name, sdk.folder))
+        continue
+
+      if want_all or want_present or name in requested:
+        sdk.path = Normalize(path)
+        self.sdks[name] = sdk
+
+    if not self.sdks:
+      raise Exception('At least one HL2SDK must be available.')
+
+    self.sm_root = self._find(builder.options.sm_path,
+                              [('SOURCEMOD112', 'sourcemod-1.12'),
+                               ('SOURCEMOD', 'sourcemod'),
+                               ('SOURCEMOD_DEV', 'sourcemod-central'),
+                               ('SOURCEMOD_DEV', 'sourcemod')])
+    if not self.sm_root:
+      raise Exception('Could not find a source copy of SourceMod.')
+
+    self.mms_root = self._find(builder.options.mms_path,
+                               [('MMSOURCE112', 'mmsource-1.12'),
+                                ('MMSOURCE_DEV', 'metamod-source'),
+                                ('MMSOURCE_DEV', 'mmsource-central'),
+                                ('MMSOURCE', 'metamod-source')])
+    if not self.mms_root:
+      raise Exception('Could not find a source copy of Metamod:Source.')
+
+  def _find(self, override, candidates):
+    if override and os.path.isdir(override):
+      return Normalize(override)
+    for env, folder in candidates:
+      path = ResolveEnvPath(env, folder)
+      if path:
+        return Normalize(path)
+    return None
+
+  def configure(self):
+    for cxx in self.targets:
+      self._configure_cxx(cxx)
+
+  def _configure_cxx(self, cxx):
+    if cxx.like('gcc'):
+      cxx.defines += ['stricmp=strcasecmp', '_stricmp=strcasecmp', '_snprintf=snprintf',
+                      '_vsnprintf=vsnprintf', 'HAVE_STDINT_H', 'GNUC']
+      cxx.cflags += ['-pipe', '-fno-strict-aliasing', '-Wall', '-Wno-unused', '-Wno-switch',
+                     '-Wno-unknown-pragmas', '-msse', '-fvisibility=hidden', '-fPIC']
+      cxx.cxxflags += ['-std=c++17', '-fno-exceptions', '-fno-rtti', '-fno-threadsafe-statics',
+                       '-Wno-non-virtual-dtor', '-Wno-overloaded-virtual', '-Wno-register',
+                       '-fvisibility-inlines-hidden']
+      if cxx.target.arch == 'x86':
+        cxx.cflags += ['-m32']
+        cxx.linkflags += ['-m32']
+      cxx.linkflags += ['-static-libgcc']
+    elif cxx.like('msvc'):
+      cxx.cxxflags += ['/std:c++17', '/EHsc-', '/GR-', '/MT']
+      cxx.cflags += ['/MT']
+      cxx.defines += ['WIN32', '_CRT_SECURE_NO_WARNINGS', '_CRT_SECURE_NO_DEPRECATE']
+      if cxx.target.arch in ('x86_64', 'x64'):
+        cxx.defines += ['WIN64']
+      cxx.linkflags += ['/PDBALTPATH:%_PDB%']
+
+    if builder.options.opt == '1':
+      cxx.cflags += ['-O2'] if cxx.like('gcc') else ['/O2']
+    if builder.options.debug == '1':
+      cxx.cflags += ['-g3'] if cxx.like('gcc') else ['/Od']
+
+    cxx.defines += ['SOURCEMOD_BUILD']
+
+  def HL2Project(self, context, name):
+    project = context.LibraryProject(name)
+    project.sources = []
+    return project
+
+  def IsTargetSupported(self, cxx, sdk):
+    return cxx.target.platform in sdk.platforms
+
+  def HL2ExtConfig(self, project, context, cxx, name, sdk):
+    binary = project.Configure(cxx, name, '{0} - {1}'.format(self.tag, cxx.target.arch))
+    compiler = binary.compiler
+
+    compiler.cxxincludes += [
+      os.path.join(self.sm_root, 'public'),
+      os.path.join(self.sm_root, 'public', 'extensions'),
+      os.path.join(self.sm_root, 'sourcepawn', 'include'),
+      os.path.join(self.sm_root, 'public', 'amtl', 'amtl'),
+      os.path.join(self.sm_root, 'public', 'amtl'),
+      os.path.join(self.mms_root, 'core'),
+      os.path.join(self.mms_root, 'core', 'sourcehook'),
+    ]
+
+    sdk_includes = ['public', os.path.join('public', 'engine'),
+                    os.path.join('public', 'mathlib'), os.path.join('public', 'vstdlib'),
+                    os.path.join('public', 'tier0'), os.path.join('public', 'tier1')]
+    for inc in sdk_includes:
+      compiler.cxxincludes += [os.path.join(sdk.path, inc)]
+
+    compiler.defines += ['SOURCE_ENGINE={0}'.format(sdk.code), 'META_NO_HL2SDK']
+
+    if cxx.target.platform == 'linux':
+      compiler.postlink += ['-lm']
+
+    return binary
+
+
+Extension = ExtensionConfig()
+Extension.detectSDKs()
+Extension.configure()
+
+builder.Build('AMBuilder', { 'Extension': Extension })
