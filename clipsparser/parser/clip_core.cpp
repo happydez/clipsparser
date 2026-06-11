@@ -1169,15 +1169,17 @@ std::vector<Face> buildFacesWithFallback(const BspMap& map, int brushIndex, doub
     return faces;
 }
 
-// True if the brush matches one of the selectors: its bounding box (built from
-// its face vertices and shifted into world space by the owner origin) agrees on
-// all six coordinates within kBrushBoxEpsilon, and - when the selector sets a
-// face count - the brush has exactly that many faces. Matching both corners (and
-// optionally the face count) is a near-unique fingerprint of one specific brush.
-bool brushBoxMatches(const std::vector<Face>& faces, const Vec3& originOffset, const std::vector<BrushMatch>& boxes)
+// True if the brush should be drawn for one of the selectors: its bounding box
+// (built from its face vertices and shifted into world space by the owner origin)
+// lies INSIDE the selector box, expanded by `tolerance` on each side, and - when
+// the selector sets a face count - the brush has exactly that many faces.
+//
+// Containment (rather than exact-corner equality) lets one selector box pick up
+// every brush of a grouped func_detail: you author the group's overall
+// centre/size from Hammer and each member brush, being inside that box, is drawn.
+// A box sized to a single brush still selects just that brush.
+bool brushBoxMatches(const std::vector<Face>& faces, const Vec3& originOffset, const std::vector<BrushMatch>& boxes, double tolerance)
 {
-    constexpr double kBrushBoxEpsilon = 1.0;
-
     Vec3 mn = {  1e30,  1e30,  1e30 };
     Vec3 mx = { -1e30, -1e30, -1e30 };
 
@@ -1206,12 +1208,16 @@ bool brushBoxMatches(const std::vector<Face>& faces, const Vec3& originOffset, c
             continue;
         }
 
-        if (std::fabs(mn.x - m.mins.x) <= kBrushBoxEpsilon &&
-            std::fabs(mn.y - m.mins.y) <= kBrushBoxEpsilon &&
-            std::fabs(mn.z - m.mins.z) <= kBrushBoxEpsilon &&
-            std::fabs(mx.x - m.maxs.x) <= kBrushBoxEpsilon &&
-            std::fabs(mx.y - m.maxs.y) <= kBrushBoxEpsilon &&
-            std::fabs(mx.z - m.maxs.z) <= kBrushBoxEpsilon)
+        // Normalise the selector corners (mins/maxs may be given in any order).
+        double loX = ((m.mins.x < m.maxs.x) ? m.mins.x : m.maxs.x) - tolerance;
+        double loY = ((m.mins.y < m.maxs.y) ? m.mins.y : m.maxs.y) - tolerance;
+        double loZ = ((m.mins.z < m.maxs.z) ? m.mins.z : m.maxs.z) - tolerance;
+        double hiX = ((m.mins.x > m.maxs.x) ? m.mins.x : m.maxs.x) + tolerance;
+        double hiY = ((m.mins.y > m.maxs.y) ? m.mins.y : m.maxs.y) + tolerance;
+        double hiZ = ((m.mins.z > m.maxs.z) ? m.mins.z : m.maxs.z) + tolerance;
+
+        if (mn.x >= loX && mn.y >= loY && mn.z >= loZ &&
+            mx.x <= hiX && mx.y <= hiY && mx.z <= hiZ)
         {
             return true;
         }
@@ -1293,7 +1299,6 @@ ParseResult parseBspClips(const char* bspPath, const ParseOptions& options)
         Vec3 originOffset = ownerPtr ? owner.origin : Vec3{ 0.0, 0.0, 0.0 };
 
         std::vector<Face> faces;
-        bool facesBuilt = false;
 
         int type = classifyBrush(map, i, model, ownerPtr);
         if (type < 0)
@@ -1304,19 +1309,17 @@ ParseResult parseBspClips(const char* bspPath, const ParseOptions& options)
             }
             else if (!options.brushBoxes.empty())
             {
-                // Position-based selection: build the brush so we can match its
-                // bounding box against the config, reusing the faces if it hits.
-                faces = buildFacesWithFallback(map, i, options.shrink);
-                facesBuilt = true;
+                // Position-based selection. Match against the UNSHRUNK bounds so a
+                // centre/size authored from Hammer lines up exactly; shrink only
+                // affects the geometry we draw, never the match.
+                std::vector<Face> matchFaces = buildFacesWithFallback(map, i, 0.0);
 
-                if (!faces.empty() && brushBoxMatches(faces, originOffset, options.brushBoxes))
-                {
-                    type = Clip_Custom;
-                }
-                else
+                if (matchFaces.empty() || !brushBoxMatches(matchFaces, originOffset, options.brushBoxes, options.brushBoxTolerance))
                 {
                     continue;
                 }
+
+                type = Clip_Custom;
             }
             else
             {
@@ -1327,10 +1330,7 @@ ParseResult parseBspClips(const char* bspPath, const ParseOptions& options)
         // Shrinking erodes the brush by `shrink` on every side, so a brush thinner
         // than 2*shrink (a 1-2 unit wall clip, say) collapses to nothing; the
         // builder falls back to drawing it unshrunk in that case.
-        if (!facesBuilt)
-        {
-            faces = buildFacesWithFallback(map, i, options.shrink);
-        }
+        faces = buildFacesWithFallback(map, i, options.shrink);
 
         if (faces.empty())
         {

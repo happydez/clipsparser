@@ -40,6 +40,7 @@ void ClipCache::clearFilters()
     _filters.hammerIds.clear();
     _filters.brushBoxes.clear();
     _filters.shrink = 0.0;
+    _filters.brushBoxTolerance = 1.0;
 }
 
 void ClipCache::addMaterial(const char* substring)
@@ -69,11 +70,15 @@ void ClipCache::setShrink(float units)
     _filters.shrink = units;
 }
 
+void ClipCache::setBrushTolerance(float units)
+{
+    _filters.brushBoxTolerance = units;
+}
+
 bool ClipCache::rebuild(const char* bspPath)
 {
     clips::ParseResult parsed = clips::parseBspClips(bspPath, _filters);
-    if (!parsed.ok)
-    {
+    if (!parsed.ok) {
         return false;
     }
 
@@ -153,6 +158,9 @@ static cell_t Native_Parse(IPluginContext* pContext, const cell_t* params)
     char* given;
     pContext->LocalToString(params[1], &given);
 
+    // A relative path like "maps/x.bsp" is resolved against the game folder so
+    // callers do not have to know where the server is installed; an absolute
+    // path is used as-is.
     char full[PLATFORM_MAX_PATH];
     if (given[0] && given[1] == ':')
     {
@@ -227,6 +235,13 @@ static cell_t Native_SetShrink(IPluginContext* pContext, const cell_t* params)
     return 0;
 }
 
+static cell_t Native_SetBrushTolerance(IPluginContext* pContext, const cell_t* params)
+{
+    g_ClipsParser.cache.setBrushTolerance(sp_ctof(params[1]));
+
+    return 0;
+}
+
 static cell_t Native_GetEdgeCount(IPluginContext* pContext, const cell_t* params)
 {
     return g_ClipsParser.cache.edgeCount(params[1]);
@@ -273,6 +288,7 @@ static const sp_nativeinfo_t s_Natives[] =
     { "Clips_AddHammerId",          Native_AddHammerId },
     { "Clips_AddBrushBox",          Native_AddBrushBox },
     { "Clips_SetShrink",            Native_SetShrink },
+    { "Clips_SetBrushTolerance",    Native_SetBrushTolerance },
     { "Clips_GetEdgeCount",         Native_GetEdgeCount },
     { "Clips_GetEdge",              Native_GetEdge },
     { "Clips_GetBrushCount",        Native_GetBrushCount },

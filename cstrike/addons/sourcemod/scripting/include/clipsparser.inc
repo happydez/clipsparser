@@ -57,14 +57,16 @@ native void Clips_AddMaterialFilter(const char[] substring);
 native void Clips_AddHammerId(int hammerid);
 
 /**
- * Register a brush bounding box (world coordinates). Any brush whose own bounding
- * box matches mins/maxs on all six coordinates (within ~1 unit) is added to
- * ClipType_Custom. This is how to single out one specific piece of world
- * geometry, which has no hammerid once compiled; read the wall's centre and size
- * from Hammer and pass mins = centre - size/2, maxs = centre + size/2.
+ * Register a brush bounding box (world coordinates). Every brush whose own
+ * bounding box lies INSIDE mins/maxs (expanded by the brush tolerance) is added
+ * to ClipType_Custom. This singles out world geometry, which has no hammerid once
+ * compiled: read the centre and size from Hammer and pass mins = centre - size/2,
+ * maxs = centre + size/2. Because the match is containment, a box sized to a
+ * grouped func_detail picks up all its member brushes, while a box sized to one
+ * brush selects just that brush.
  *
  * @param faces     Optional required face count (Hammer's "solid with N faces");
- *                  0 matches any. Set it to tighten the match further.
+ *                  0 matches any. Set it to tighten the match for a single brush.
  */
 native void Clips_AddBrushBox(const float mins[3], const float maxs[3], int faces = 0);
 
@@ -75,6 +77,14 @@ native void Clips_AddBrushBox(const float mins[3], const float maxs[3], int face
  * Set before Clips_Parse.
  */
 native void Clips_SetShrink(float units);
+
+/**
+ * Per-corner tolerance (units) for matching brushes against Clips_AddBrushBox
+ * selectors. The match runs on the brush's unshrunk bounds, so this only needs to
+ * absorb authoring rounding, not the shrink amount. Default 1.0. Set before
+ * Clips_Parse.
+ */
+native void Clips_SetBrushTolerance(float units);
 
 /**
  * Number of edges available for a clip type after a successful parse.
@@ -98,7 +108,8 @@ native int Clips_GetEdgeCount(ClipType type);
 native bool Clips_GetEdge(ClipType type, int index, float a[3], float b[3]);
 
 /**
- * Number of distinct brushes that contributed edges of a clip type.
+ * Number of distinct brushes that contributed edges of a clip type. Handy for
+ * status output ("drawing N player-clip brushes").
  */
 native int Clips_GetBrushCount(ClipType type);
 

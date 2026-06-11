@@ -29,6 +29,7 @@ Convar gCV_Refresh;
 Convar gCV_WidthMin;
 Convar gCV_WidthMax;
 Convar gCV_DefaultShrink;
+Convar gCV_BrushTolerance;
 Convar gCV_MaxEdges;
 Convar gCV_SortNearest;
 Convar gCV_ColText;
@@ -116,6 +117,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
     MarkNativeAsOptional("Clips_AddHammerId");
     MarkNativeAsOptional("Clips_AddBrushBox");
     MarkNativeAsOptional("Clips_SetShrink");
+    MarkNativeAsOptional("Clips_SetBrushTolerance");
     MarkNativeAsOptional("Clips_GetEdgeCount");
     MarkNativeAsOptional("Clips_GetEdge");
     MarkNativeAsOptional("Clips_GetBrushCount");
@@ -131,6 +133,7 @@ public void OnPluginStart()
     gCV_WidthMin = new Convar("clips_width_min", "0.1", "Minimum beam width a player can set (cannot go below 0).", _, true, 0.0);
     gCV_WidthMax = new Convar("clips_width_max", "10.0", "Maximum beam width a player can set.", _, true, 0.1);
     gCV_DefaultShrink = new Convar("clips_default_shrink", "0.0", "Shrink (units) applied on maps with no custom config;\na custom config's own shrink overrides this.", _, true, 0.0);
+    gCV_BrushTolerance = new Convar("clips_brush_tolerance", "1.0", "Per-corner tolerance (units) for matching config 'brushes' boxes\nagainst world geometry. A config's own 'tolerance' overrides this.", _, true, 0.0);
     gCV_MaxEdges = new Convar("clips_max_edges", "1024", "Max clip edges drawn to one player per refresh cycle (0 = unlimited).\nCaps client load in extremely dense areas.", _, true, 0.0);
     gCV_SortNearest = new Convar("clips_sort_nearest", "0", "When clips_max_edges caps drawing, draw the NEAREST clips first (1)\ninstead of arbitrary (0). Costs a per-cycle sort.", _, true, 0.0, true, 1.0);
     gCV_ColText = new Convar("clips_color_text", "e8dccc", "Chat message text colour (hex RRGGBB).");
@@ -306,6 +309,7 @@ void LoadMapConfig(const char[] map)
     gB_SortNearest = kv.GetNum("clips_sort_nearest", gB_SortNearest ? 1 : 0) != 0;
 
     Clips_SetShrink(kv.GetFloat("shrink", gCV_DefaultShrink.FloatValue));
+    Clips_SetBrushTolerance(kv.GetFloat("tolerance", gCV_BrushTolerance.FloatValue));
 
     if (kv.JumpToKey("types"))
     {
@@ -328,8 +332,9 @@ void LoadMapConfig(const char[] map)
 }
 
 // Single out specific world geometry (which has no hammerid) by its extent. Each
-// entry gives the wall's centre and size as read from Hammer; the
-// box is handed to the extension, which draws the brush whose bounds match it.
+// entry gives the centre and size as read from Hammer; the box is handed to the
+// extension, which draws every brush whose bounds lie inside it. A box sized to a
+// grouped func_detail therefore grabs all of its member brushes.
 void ReadBrushBoxes(KeyValues kv)
 {
     if (!kv.JumpToKey("brushes"))
@@ -466,6 +471,7 @@ void ReadFilters(KeyValues kv)
 void ApplyDefaultConfig()
 {
     Clips_SetShrink(gCV_DefaultShrink.FloatValue);
+    Clips_SetBrushTolerance(gCV_BrushTolerance.FloatValue);
 
     for (int t = 0; t < TYPE_COUNT; t++)
     {

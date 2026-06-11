@@ -46,24 +46,31 @@ struct BrushMatch
 
 // Extra extraction rules supplied from the per map config. A brush is added to
 // Clip_Custom if all of its faces use one of these materials (substring match),
-// or if it belongs to a brush entity whose hammerid is listed. Both exist to
-// pull in geometry the built-in heuristics don't cover.
+// if it belongs to a brush entity whose hammerid is listed, or if it matches one
+// of the brushBoxes by extent. All exist to pull in geometry the built-in
+// heuristics don't cover.
 struct ParseOptions
 {
     std::vector<std::string> materials; // e.g. "tools/toolsinvisible"
     std::vector<int> hammerIds; // editor entity ids of brush entities
 
     // World geometry loses its hammerid when compiled, so the only way to single
-    // out one specific wall/block is by its exact shape. A brush is drawn when
-    // both corners of its bounding box match one of these (within a small
-    // tolerance) and, if faceCount is set, its face count matches too
-    // a near-unique fingerprint authored from Hammer's centre/size/face count.
+    // out a specific wall/block is by position. A brush is drawn when its bounding
+    // box lies INSIDE one of these boxes (expanded by brushBoxTolerance) and, if
+    // faceCount is set, its face count matches too. Containment means one box sized
+    // to a grouped func_detail picks up every member brush; a box sized to a single
+    // brush selects just that brush. Author the centre/size from Hammer.
     std::vector<BrushMatch> brushBoxes;
 
     // Shrink every brush inward by this many units before building its faces, so
     // the drawn edges sit inside the shape instead of flush against neighbouring
     // surfaces. 0 leaves geometry exactly on the brush faces.
     double shrink = 0.0;
+
+    // Per-corner tolerance (units) when matching a brush against brushBoxes. The
+    // match is done on the UNSHRUNK bounds, so this only needs to absorb authoring
+    // rounding, not the shrink amount.
+    double brushBoxTolerance = 1.0;
 };
 
 struct ParseResult

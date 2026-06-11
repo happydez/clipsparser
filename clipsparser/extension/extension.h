@@ -36,6 +36,7 @@ public:
     void addHammerId(int id);
     void addBrushBox(const float mins[3], const float maxs[3], int faceCount);
     void setShrink(float units);
+    void setBrushTolerance(float units);
 
     int bspVersion() const
     {
