@@ -57,6 +57,16 @@ native void Clips_AddMaterialFilter(const char[] substring);
 native void Clips_AddHammerId(int hammerid);
 
 /**
+ * Register an entity classname (case-insensitive, e.g. "func_lod"). Brushes of any
+ * brush entity with this classname are added to ClipType_Custom on the next
+ * Clips_Parse, unless the built-in classification already claimed them (clips,
+ * ladders, buttons, invisible func_brush/func_wall). Like Clips_AddHammerId this
+ * only works for entities that survive compilation as their own brush model; world and
+ * func_detail brushes have no hammerid in the compiled map.
+ */
+native void Clips_AddClassnameFilter(const char[] classname);
+
+/**
  * Register a brush bounding box (world coordinates). Every brush whose own
  * bounding box lies INSIDE mins/maxs (expanded by the brush tolerance) is added
  * to ClipType_Custom. This singles out world geometry, which has no hammerid once

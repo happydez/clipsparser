@@ -1153,6 +1153,18 @@ bool brushMatchesCustom(const BspMap& map, int brushIndex, const EntityInfo* own
         }
     }
 
+    // classname
+    if (owner != nullptr && !owner->classname.empty())
+    {
+        for (const std::string& cls : options.classnames)
+        {
+            if (toLower(cls) == owner->classname)
+            {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 

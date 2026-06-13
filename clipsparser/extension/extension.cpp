@@ -38,6 +38,7 @@ void ClipCache::clearFilters()
 {
     _filters.materials.clear();
     _filters.hammerIds.clear();
+    _filters.classnames.clear();
     _filters.brushBoxes.clear();
     _filters.shrink = 0.0;
     _filters.brushBoxTolerance = 1.0;
@@ -54,6 +55,14 @@ void ClipCache::addMaterial(const char* substring)
 void ClipCache::addHammerId(int id)
 {
     _filters.hammerIds.push_back(id);
+}
+
+void ClipCache::addClassname(const char* classname)
+{
+    if (classname && classname[0])
+    {
+        _filters.classnames.push_back(classname);
+    }
 }
 
 void ClipCache::addBrushBox(const float mins[3], const float maxs[3], int faceCount)
@@ -208,6 +217,15 @@ static cell_t Native_AddHammerId(IPluginContext* pContext, const cell_t* params)
     return 0;
 }
 
+static cell_t Native_AddClassnameFilter(IPluginContext* pContext, const cell_t* params)
+{
+    char* classname;
+    pContext->LocalToString(params[1], &classname);
+    g_ClipsParser.cache.addClassname(classname);
+
+    return 0;
+}
+
 static cell_t Native_AddBrushBox(IPluginContext* pContext, const cell_t* params)
 {
     cell_t* mins;
@@ -286,6 +304,7 @@ static const sp_nativeinfo_t s_Natives[] =
     { "Clips_ClearFilters",         Native_ClearFilters },
     { "Clips_AddMaterialFilter",    Native_AddMaterialFilter },
     { "Clips_AddHammerId",          Native_AddHammerId },
+    { "Clips_AddClassnameFilter",   Native_AddClassnameFilter },
     { "Clips_AddBrushBox",          Native_AddBrushBox },
     { "Clips_SetShrink",            Native_SetShrink },
     { "Clips_SetBrushTolerance",    Native_SetBrushTolerance },

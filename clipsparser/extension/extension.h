@@ -34,6 +34,7 @@ public:
     void clearFilters();
     void addMaterial(const char* substring);
     void addHammerId(int id);
+    void addClassname(const char* classname);
     void addBrushBox(const float mins[3], const float maxs[3], int faceCount);
     void setShrink(float units);
     void setBrushTolerance(float units);

@@ -46,13 +46,20 @@ struct BrushMatch
 
 // Extra extraction rules supplied from the per map config. A brush is added to
 // Clip_Custom if all of its faces use one of these materials (substring match),
-// if it belongs to a brush entity whose hammerid is listed, or if it matches one
-// of the brushBoxes by extent. All exist to pull in geometry the built-in
-// heuristics don't cover.
+// if it belongs to a brush entity whose hammerid is listed, if it belongs to a
+// brush entity whose classname is listed, or if it matches one of the brushBoxes
+// by extent. All exist to pull in geometry the built-in heuristics don't cover.
 struct ParseOptions
 {
     std::vector<std::string> materials; // e.g. "tools/toolsinvisible"
     std::vector<int> hammerIds; // editor entity ids of brush entities
+
+    // Brush-entity classnames to pull in, e.g. "func_lod". Compared case-
+    // insensitively against the owning entity's classname. Only applies to brushes
+    // not already claimed by the built-in classification, and (like hammerIds) only
+    // to entities that survive compilation as their own brush model; world and
+    // func_detail brushes have no hammerid in the compiled map.
+    std::vector<std::string> classnames;
 
     // World geometry loses its hammerid when compiled, so the only way to single
     // out a specific wall/block is by position. A brush is drawn when its bounding

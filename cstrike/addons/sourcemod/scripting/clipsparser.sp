@@ -115,6 +115,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
     MarkNativeAsOptional("Clips_ClearFilters");
     MarkNativeAsOptional("Clips_AddMaterialFilter");
     MarkNativeAsOptional("Clips_AddHammerId");
+    MarkNativeAsOptional("Clips_AddClassnameFilter");
     MarkNativeAsOptional("Clips_AddBrushBox");
     MarkNativeAsOptional("Clips_SetShrink");
     MarkNativeAsOptional("Clips_SetBrushTolerance");
@@ -457,6 +458,28 @@ void ReadFilters(KeyValues kv)
                 if (idText[0])
                 {
                     Clips_AddHammerId(StringToInt(idText));
+                }
+            }
+            while (kv.GotoNextKey(false));
+
+            kv.GoBack();
+        }
+
+        kv.GoBack();
+    }
+
+    if (kv.JumpToKey("classnames"))
+    {
+        if (kv.GotoFirstSubKey(false))
+        {
+            do
+            {
+                char classname[64];
+                kv.GetSectionName(classname, sizeof(classname));
+
+                if (classname[0])
+                {
+                    Clips_AddClassnameFilter(classname);
                 }
             }
             while (kv.GotoNextKey(false));

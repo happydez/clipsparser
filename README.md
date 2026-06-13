@@ -55,6 +55,11 @@ When `<map>.cfg` present it fully replaces the defaults.
     "1234567" "1"
   }
 
+  "classnames"   // also draw brush entities with these classnames (Custom)
+  {
+    "func_lod" "1"
+  }
+
   "exclude_regions"   // do NOT draw clips whose centre is inside this box
   {
     "1" { "mins" "-512 -512 0"  "maxs" "512 512 256" }
