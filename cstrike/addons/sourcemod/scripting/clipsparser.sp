@@ -30,6 +30,7 @@ Convar gCV_WidthMin;
 Convar gCV_WidthMax;
 Convar gCV_DefaultShrink;
 Convar gCV_BrushTolerance;
+Convar gCV_StrictParse;
 Convar gCV_MaxEdges;
 Convar gCV_SortNearest;
 Convar gCV_ColText;
@@ -104,7 +105,7 @@ public Plugin myinfo = {
     name        = "Clips Parser",
     author      = "happydez",
     description = "Draws parsed invisible clip geometry",
-    version     = "1.1.0",
+    version     = "1.2.0",
     url         = "https://github.com/happydez/clipsparser"
 };
 
@@ -116,9 +117,12 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
     MarkNativeAsOptional("Clips_AddMaterialFilter");
     MarkNativeAsOptional("Clips_AddHammerId");
     MarkNativeAsOptional("Clips_AddClassnameFilter");
+    MarkNativeAsOptional("Clips_AddClassnameCondition");
+    MarkNativeAsOptional("Clips_AddExcludeHammerId");
     MarkNativeAsOptional("Clips_AddBrushBox");
     MarkNativeAsOptional("Clips_SetShrink");
     MarkNativeAsOptional("Clips_SetBrushTolerance");
+    MarkNativeAsOptional("Clips_SetStrictParse");
     MarkNativeAsOptional("Clips_GetEdgeCount");
     MarkNativeAsOptional("Clips_GetEdge");
     MarkNativeAsOptional("Clips_GetBrushCount");
@@ -135,6 +139,7 @@ public void OnPluginStart()
     gCV_WidthMax = new Convar("clips_width_max", "10.0", "Maximum beam width a player can set.", _, true, 0.1);
     gCV_DefaultShrink = new Convar("clips_default_shrink", "0.0", "Shrink (units) applied on maps with no custom config;\na custom config's own shrink overrides this.", _, true, 0.0);
     gCV_BrushTolerance = new Convar("clips_brush_tolerance", "1.0", "Per-corner tolerance (units) for matching config 'brushes' boxes\nagainst world geometry. A config's own 'tolerance' overrides this.", _, true, 0.0);
+    gCV_StrictParse = new Convar("clips_strict_parse", "0", "Default for invisible-material detection on maps with no custom config:\nrequire a 'tools' texture name (1) or accept any nodraw/invisible substring (0).\nA custom config's own 'strict_parse' overrides this.", _, true, 0.0, true, 1.0);
     gCV_MaxEdges = new Convar("clips_max_edges", "1024", "Max clip edges drawn to one player per refresh cycle (0 = unlimited).\nCaps client load in extremely dense areas.", _, true, 0.0);
     gCV_SortNearest = new Convar("clips_sort_nearest", "0", "When clips_max_edges caps drawing, draw the NEAREST clips first (1)\ninstead of arbitrary (0). Costs a per-cycle sort.", _, true, 0.0, true, 1.0);
     gCV_ColText = new Convar("clips_color_text", "e8dccc", "Chat message text colour (hex RRGGBB).");
@@ -311,6 +316,7 @@ void LoadMapConfig(const char[] map)
 
     Clips_SetShrink(kv.GetFloat("shrink", gCV_DefaultShrink.FloatValue));
     Clips_SetBrushTolerance(kv.GetFloat("tolerance", gCV_BrushTolerance.FloatValue));
+    Clips_SetStrictParse(kv.GetNum("strict_parse", gCV_StrictParse.BoolValue ? 1 : 0) != 0);
 
     if (kv.JumpToKey("types"))
     {
@@ -480,6 +486,46 @@ void ReadFilters(KeyValues kv)
                 if (classname[0])
                 {
                     Clips_AddClassnameFilter(classname);
+
+                    if (kv.GotoFirstSubKey(false))
+                    {
+                        do
+                        {
+                            char key[64], val[64];
+                            kv.GetSectionName(key, sizeof(key));
+                            kv.GetString(NULL_STRING, val, sizeof(val));
+
+                            if (key[0])
+                            {
+                                Clips_AddClassnameCondition(classname, key, val);
+                            }
+                        }
+                        while (kv.GotoNextKey(false));
+
+                        kv.GoBack();
+                    }
+                }
+            }
+            while (kv.GotoNextKey(false));
+
+            kv.GoBack();
+        }
+
+        kv.GoBack();
+    }
+
+    if (kv.JumpToKey("exclude_hammerids"))
+    {
+        if (kv.GotoFirstSubKey(false))
+        {
+            do
+            {
+                char idText[32];
+                kv.GetSectionName(idText, sizeof(idText));
+
+                if (idText[0])
+                {
+                    Clips_AddExcludeHammerId(StringToInt(idText));
                 }
             }
             while (kv.GotoNextKey(false));
@@ -495,6 +541,7 @@ void ApplyDefaultConfig()
 {
     Clips_SetShrink(gCV_DefaultShrink.FloatValue);
     Clips_SetBrushTolerance(gCV_BrushTolerance.FloatValue);
+    Clips_SetStrictParse(gCV_StrictParse.BoolValue);
 
     for (int t = 0; t < TYPE_COUNT; t++)
     {

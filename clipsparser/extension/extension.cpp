@@ -39,9 +39,11 @@ void ClipCache::clearFilters()
     _filters.materials.clear();
     _filters.hammerIds.clear();
     _filters.classnames.clear();
+    _filters.excludeHammerIds.clear();
     _filters.brushBoxes.clear();
     _filters.shrink = 0.0;
     _filters.brushBoxTolerance = 1.0;
+    _filters.strictInvisible = true;
 }
 
 void ClipCache::addMaterial(const char* substring)
@@ -57,12 +59,44 @@ void ClipCache::addHammerId(int id)
     _filters.hammerIds.push_back(id);
 }
 
+// Find the existing classname selector (so conditions attach to it) or create one.
+static clips::ClassnameFilter& findOrAddClassname(clips::ParseOptions& filters, const char* classname)
+{
+    for (clips::ClassnameFilter& f : filters.classnames)
+    {
+        if (f.classname == classname)
+        {
+            return f;
+        }
+    }
+
+    clips::ClassnameFilter f;
+    f.classname = classname;
+    filters.classnames.push_back(f);
+
+    return filters.classnames.back();
+}
+
 void ClipCache::addClassname(const char* classname)
 {
     if (classname && classname[0])
     {
-        _filters.classnames.push_back(classname);
+        findOrAddClassname(_filters, classname);
     }
+}
+
+void ClipCache::addClassnameCondition(const char* classname, const char* key, const char* value)
+{
+    if (classname && classname[0] && key && key[0])
+    {
+        clips::ClassnameFilter& f = findOrAddClassname(_filters, classname);
+        f.require.emplace_back(key, value ? value : "");
+    }
+}
+
+void ClipCache::addExcludeHammerId(int id)
+{
+    _filters.excludeHammerIds.push_back(id);
 }
 
 void ClipCache::addBrushBox(const float mins[3], const float maxs[3], int faceCount)
@@ -82,6 +116,11 @@ void ClipCache::setShrink(float units)
 void ClipCache::setBrushTolerance(float units)
 {
     _filters.brushBoxTolerance = units;
+}
+
+void ClipCache::setStrictParse(bool strict)
+{
+    _filters.strictInvisible = strict;
 }
 
 bool ClipCache::rebuild(const char* bspPath)
@@ -122,6 +161,13 @@ bool ClipCache::rebuild(const char* bspPath)
         }
 
         _brushCounts[t] = (int)brushes.size();
+    }
+
+    // Surface textures that look like clips but were skipped for lacking the "tools"
+    // marker, so an author can add a genuine one to the config 'materials' block.
+    for (const std::string& material : parsed.suspiciousMaterials)
+    {
+        smutils->LogMessage(myself, "Texture \"%s\" looks invisible (nodraw/invisible) but lacks \"tools\"; not drawn as a clip. If it is one, add it to the map config 'materials' block.", material.c_str());
     }
 
     return true;
@@ -226,6 +272,26 @@ static cell_t Native_AddClassnameFilter(IPluginContext* pContext, const cell_t* 
     return 0;
 }
 
+static cell_t Native_AddClassnameCondition(IPluginContext* pContext, const cell_t* params)
+{
+    char* classname;
+    char* key;
+    char* value;
+    pContext->LocalToString(params[1], &classname);
+    pContext->LocalToString(params[2], &key);
+    pContext->LocalToString(params[3], &value);
+    g_ClipsParser.cache.addClassnameCondition(classname, key, value);
+
+    return 0;
+}
+
+static cell_t Native_AddExcludeHammerId(IPluginContext* pContext, const cell_t* params)
+{
+    g_ClipsParser.cache.addExcludeHammerId(params[1]);
+
+    return 0;
+}
+
 static cell_t Native_AddBrushBox(IPluginContext* pContext, const cell_t* params)
 {
     cell_t* mins;
@@ -256,6 +322,13 @@ static cell_t Native_SetShrink(IPluginContext* pContext, const cell_t* params)
 static cell_t Native_SetBrushTolerance(IPluginContext* pContext, const cell_t* params)
 {
     g_ClipsParser.cache.setBrushTolerance(sp_ctof(params[1]));
+
+    return 0;
+}
+
+static cell_t Native_SetStrictParse(IPluginContext* pContext, const cell_t* params)
+{
+    g_ClipsParser.cache.setStrictParse(params[1] != 0);
 
     return 0;
 }
@@ -305,9 +378,12 @@ static const sp_nativeinfo_t s_Natives[] =
     { "Clips_AddMaterialFilter",    Native_AddMaterialFilter },
     { "Clips_AddHammerId",          Native_AddHammerId },
     { "Clips_AddClassnameFilter",   Native_AddClassnameFilter },
+    { "Clips_AddClassnameCondition", Native_AddClassnameCondition },
+    { "Clips_AddExcludeHammerId",   Native_AddExcludeHammerId },
     { "Clips_AddBrushBox",          Native_AddBrushBox },
     { "Clips_SetShrink",            Native_SetShrink },
     { "Clips_SetBrushTolerance",    Native_SetBrushTolerance },
+    { "Clips_SetStrictParse",       Native_SetStrictParse },
     { "Clips_GetEdgeCount",         Native_GetEdgeCount },
     { "Clips_GetEdge",              Native_GetEdge },
     { "Clips_GetBrushCount",        Native_GetBrushCount },

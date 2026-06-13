@@ -32,6 +32,13 @@ When `<map>.cfg` present it fully replaces the defaults.
   // 2*shrink is drawn un-shrunk instead of vanishing.
   "shrink" "1"
 
+  // 1: only treat a texture as invisible if its name contains "tools"
+  // (alongside nodraw/invisible), so e.g. "akno/aknodraw_01" is not mistaken for a
+  // clip.
+  // 0: accept any nodraw/invisible substring (bad? behaviour).
+  // Overrides the clips_strict_parse cvar for this map.
+  "strict_parse" "1"
+
   "types"   // which clip types to cache on this map
   {
     "clip_player"     "1"
@@ -45,6 +52,10 @@ When `<map>.cfg` present it fully replaces the defaults.
     "custom"          "1"
   }
 
+  // Brushes are auto-detected as invisible via the compiler nodraw flag or a tool
+  // texture (name contains "tools" plus "nodraw"/"invisible"). A texture that looks
+  // invisible by name but lacks "tools" (e.g. "akno/aknodraw_01") is NOT matched and
+  // is logged to the server console; if it really is a clip, list it here.
   "materials"   // also draw brushes made entirely of these textures
   {
     "tools/toolsinvisible" "1"
@@ -55,9 +66,34 @@ When `<map>.cfg` present it fully replaces the defaults.
     "1234567" "1"
   }
 
-  "classnames"   // also draw brush entities with these classnames (Custom)
+  // Draw brush entities by classname (shown as the Custom type). An entry is
+  // either "classname" "1" (every entity of that class) or "classname" { ... }
+  // listing entity keyvalues that must ALL match. Key/value are matched case-
+  // insensitively against the keyvalues that survived compilation, so look them up
+  // in the compiled map (e.g. a Stripper dump), NOT the Hammer FGD labels; the key
+  // name differs per entity (func_lod uses "Solid", func_brush uses "Solidity").
+  "classnames"
   {
-    "func_lod" "1"
+    // func_lod: "Solid" is 0 (Solid) or 1 (Not Solid). Non-solid LOD brushes have
+    // no collision, so usually you only want the solid ones.
+    "func_lod"
+    {
+      "Solid" "0"
+    }
+
+    // func_brush: "Solidity" is 0 (Toggle), 1 (Never Solid) or 2 (Always Solid).
+    "func_brush"
+    {
+      "Solidity" "2"
+    }
+
+    // No conditions; draw every entity of this class.
+    "func_wall" "1"
+  }
+
+  "exclude_hammerids"   // never draw these brush entities, even if matched above
+  {
+    "7654321" "1"
   }
 
   "exclude_regions"   // do NOT draw clips whose centre is inside this box

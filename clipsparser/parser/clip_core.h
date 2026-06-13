@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <utility>
 
 namespace clips
 {
@@ -44,6 +45,18 @@ struct BrushMatch
     int faceCount;
 };
 
+// A classname-based brush selector. Brushes of a brush entity with this classname
+// are pulled into Clip_Custom. If `require` is non-empty, the entity must ALSO carry
+// every listed keyvalue with the given value (all matched case-insensitively against
+// the keyvalues that survived compilation); this is how func_lod with "solid" "1"
+// gets drawn while non-solid ones are skipped. An empty `require` matches every
+// entity of that classname.
+struct ClassnameFilter
+{
+    std::string classname;
+    std::vector<std::pair<std::string, std::string>> require; // key -> required value
+};
+
 // Extra extraction rules supplied from the per map config. A brush is added to
 // Clip_Custom if all of its faces use one of these materials (substring match),
 // if it belongs to a brush entity whose hammerid is listed, if it belongs to a
@@ -54,12 +67,17 @@ struct ParseOptions
     std::vector<std::string> materials; // e.g. "tools/toolsinvisible"
     std::vector<int> hammerIds; // editor entity ids of brush entities
 
-    // Brush-entity classnames to pull in, e.g. "func_lod". Compared case-
-    // insensitively against the owning entity's classname. Only applies to brushes
-    // not already claimed by the built-in classification, and (like hammerIds) only
-    // to entities that survive compilation as their own brush model; world and
-    // func_detail brushes have no hammerid in the compiled map.
-    std::vector<std::string> classnames;
+    // Brush-entity classname selectors, e.g. "func_lod" (optionally gated on
+    // keyvalues). Compared case-insensitively against the owning entity's classname.
+    // Only applies to brushes not already claimed by the built-in classification,
+    // and (like hammerIds) only to entities that survive compilation as their own
+    // brush model; world and func_detail brushes have no entity in the compiled map.
+    std::vector<ClassnameFilter> classnames;
+
+    // Brush-entity hammerids to NEVER draw, even when they would otherwise match a
+    // classname/material/box selector or the built-in classification. Subtractive
+    // escape hatch for the handful of entities a broader rule wrongly picks up.
+    std::vector<int> excludeHammerIds;
 
     // World geometry loses its hammerid when compiled, so the only way to single
     // out a specific wall/block is by position. A brush is drawn when its bounding
@@ -78,6 +96,12 @@ struct ParseOptions
     // match is done on the UNSHRUNK bounds, so this only needs to absorb authoring
     // rounding, not the shrink amount.
     double brushBoxTolerance = 1.0;
+
+    // When true (default), a material is only auto-classified as invisible if its
+    // name carries the "tools" marker alongside "nodraw"/"invisible". Set false to
+    // restore the looser match (any "nodraw"/"invisible" substring), e.g. for maps
+    // whose clip textures don't follow the tools naming convention.
+    bool strictInvisible = true;
 };
 
 struct ParseResult
@@ -91,6 +115,13 @@ struct ParseResult
     int monsterClips = 0;
 
     std::vector<Face> faces[ClipTypeCount];
+
+    // Material names that look invisible (contain "nodraw"/"invisible") but lack the
+    // "tools" marker, so they were deliberately NOT auto-classified as invisible
+    // (avoids matching e.g. a "akno/aknodraw_01" texture). Deduplicated. The caller
+    // can warn that, if one of these really is an invisible clip, it should be added
+    // to the config 'materials' block.
+    std::vector<std::string> suspiciousMaterials;
 };
 
 // Parse a .bsp and reconstruct every clip face. On failure ParseResult::ok is

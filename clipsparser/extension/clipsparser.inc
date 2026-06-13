@@ -67,6 +67,27 @@ native void Clips_AddHammerId(int hammerid);
 native void Clips_AddClassnameFilter(const char[] classname);
 
 /**
+ * Gate a classname selector on an entity keyvalue. After Clips_AddClassnameFilter,
+ * call this once per required keyvalue; the classname is then drawn only for
+ * entities that carry EVERY listed key with the given value (both compared
+ * case-insensitively against the keyvalues that survived compilation). With no
+ * conditions a classname matches every entity of that type.
+ *
+ * @param classname Classname previously passed to Clips_AddClassnameFilter.
+ * @param key       Entity keyvalue name (e.g. "solid").
+ * @param value     Required value (e.g. "1").
+ */
+native void Clips_AddClassnameCondition(const char[] classname, const char[] key, const char[] value);
+
+/**
+ * Blacklist a brush entity by hammerid. Its brushes are never drawn, even if a
+ * classname/material/box selector or the built-in classification would otherwise
+ * pick them up. A subtractive escape hatch for the few entities a broader rule
+ * wrongly catches.
+ */
+native void Clips_AddExcludeHammerId(int hammerid);
+
+/**
  * Register a brush bounding box (world coordinates). Every brush whose own
  * bounding box lies INSIDE mins/maxs (expanded by the brush tolerance) is added
  * to ClipType_Custom. This singles out world geometry, which has no hammerid once
@@ -95,6 +116,17 @@ native void Clips_SetShrink(float units);
  * Clips_Parse.
  */
 native void Clips_SetBrushTolerance(float units);
+
+/**
+ * Toggle strict invisible-material detection. When true, a brush face is
+ * only auto-classified as invisible by its material name if the name contains
+ * "tools" alongside "nodraw"/"invisible"; this stops textures that merely contain
+ * those substrings (e.g. a "akno/aknodraw_01" player texture) from being mistaken
+ * for clips. Set false to restore the looser match for maps whose clip textures
+ * don't follow the tools naming convention. The Surf_NoDraw compiler flag is honored
+ * either way. Set before Clips_Parse.
+ */
+native void Clips_SetStrictParse(bool strict);
 
 /**
  * Number of edges available for a clip type after a successful parse.

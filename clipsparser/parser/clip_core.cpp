@@ -575,6 +575,11 @@ struct EntityInfo
     int renderamt = -1;
     int hammerId = -1;
     Vec3 origin = { 0.0, 0.0, 0.0 };
+
+    // Every keyvalue of the entity that survived compilation, keys lower-cased.
+    // Lets the config gate a classname selector on arbitrary fields (e.g. func_lod
+    // "solid" "1") without the parser having to know each entity's schema.
+    std::unordered_map<std::string, std::string> keyvalues;
 };
 
 // Reads brushes, rebuilds their geometry and maps them to the entity that owns
@@ -677,6 +682,7 @@ private:
             {
                 std::string key = readQuoted(text, length, i);
                 std::string value = readQuoted(text, length, i);
+                current.keyvalues[toLowerStr(key.c_str())] = value;
                 if (key == "classname")
                 {
                     current.classname = value;
@@ -756,13 +762,39 @@ private:
         return out;
     }
 
-    static bool materialIsInvisible(const char* material)
+    // A material counts as invisible by name when it carries a "nodraw"/"invisible"
+    // token. In strict mode (the default) it must ALSO carry the "tools" marker, so
+    // player nicknames or art textures that merely contain the substring (e.g.
+    // "akno/aknodraw_01") are not mistaken for clips; non-strict mode drops that
+    // requirement. Genuine nodraw faces are also caught by the Surf_NoDraw flag,
+    // independent of this heuristic.
+    bool materialIsInvisible(const char* material) const
     {
         std::string name = toLowerStr(material);
+        if (_strictInvisible && name.find("tools") == std::string::npos)
+        {
+            return false;
+        }
+
         return name.find("invisible") != std::string::npos || name.find("nodraw") != std::string::npos;
     }
 
+    // A material that looks invisible by name but lacks the "tools" marker, so it is
+    // deliberately not auto-classified. Surfaced to the server log so an author can
+    // add it to the config 'materials' block if it really is a clip.
+    static bool materialIsSuspicious(const char* material)
+    {
+        std::string name = toLowerStr(material);
+        bool looksInvisible = name.find("invisible") != std::string::npos || name.find("nodraw") != std::string::npos;
+
+        return looksInvisible && name.find("tools") == std::string::npos;
+    }
+
     const BspFile& _bsp;
+
+    // When true, materialIsInvisible requires the "tools" marker; set from
+    // the config's strict_parse before parsing.
+    bool _strictInvisible = true;
 
     const dPlane* _planes = nullptr;
     const dBrush* _brushes = nullptr;
@@ -814,6 +846,11 @@ public:
     int brushCount() const
     {
         return _brushCount;
+    }
+
+    void setStrictInvisible(bool strict)
+    {
+        _strictInvisible = strict;
     }
 
     const dBrush& brush(int index) const
@@ -941,6 +978,36 @@ public:
         }
 
         return sawRealSide;
+    }
+
+    // Scan every real brush side and collect (deduplicated, lower-cased) the names
+    // of materials that look invisible but lack the "tools" marker, so the server
+    // can warn about textures we intentionally skipped.
+    void collectSuspiciousMaterials(std::unordered_set<std::string>& out) const
+    {
+        for (int bi = 0; bi < brushCount(); bi++)
+        {
+            const dBrush& b = _brushes[bi];
+            if (!sidesInRange(b))
+            {
+                continue;
+            }
+
+            for (int i = 0; i < b.numSides; i++)
+            {
+                const dBrushSide& side = _brushSides[b.firstSide + i];
+                if (side.bevel)
+                {
+                    continue;
+                }
+
+                const char* material = sideMaterial(side);
+                if (materialIsSuspicious(material))
+                {
+                    out.insert(toLowerStr(material));
+                }
+            }
+        }
     }
 
     // Rebuild every renderable face polygon of one brush. `shrink` moves every
@@ -1156,12 +1223,50 @@ bool brushMatchesCustom(const BspMap& map, int brushIndex, const EntityInfo* own
     // classname
     if (owner != nullptr && !owner->classname.empty())
     {
-        for (const std::string& cls : options.classnames)
+        for (const ClassnameFilter& f : options.classnames)
         {
-            if (toLower(cls) == owner->classname)
+            if (toLower(f.classname) != owner->classname)
+            {
+                continue;
+            }
+
+            // No conditions: every entity of this classname matches. Otherwise the
+            // entity must carry each required keyvalue with the listed value.
+            bool allMatch = true;
+            for (const auto& cond : f.require)
+            {
+                auto it = owner->keyvalues.find(toLower(cond.first)); // keys stored lower-cased
+                if (it == owner->keyvalues.end() || toLower(it->second) != toLower(cond.second))
+                {
+                    allMatch = false;
+                    break;
+                }
+            }
+
+            if (allMatch)
             {
                 return true;
             }
+        }
+    }
+
+    return false;
+}
+
+// True if this brush's owning entity is on the config's exclude-by-hammerid list,
+// in which case the brush is dropped before any other rule gets to claim it.
+bool hammerIdExcluded(const EntityInfo* owner, const ParseOptions& options)
+{
+    if (owner == nullptr || owner->hammerId < 0)
+    {
+        return false;
+    }
+
+    for (int id : options.excludeHammerIds)
+    {
+        if (id == owner->hammerId)
+        {
+            return true;
         }
     }
 
@@ -1267,6 +1372,7 @@ ParseResult parseBspClips(const char* bspPath, const ParseOptions& options)
     }
 
     BspMap map(bsp);
+    map.setStrictInvisible(options.strictInvisible);
     std::unordered_map<int, int> brushModel = map.mapBrushesToModels();
     std::unordered_map<int, EntityInfo> modelEntities = map.mapModelsToEntities();
 
@@ -1306,6 +1412,11 @@ ParseResult parseBspClips(const char* bspPath, const ParseOptions& options)
             owner = it->second;
             owner.classname = toLower(owner.classname);
             ownerPtr = &owner;
+        }
+
+        if (hammerIdExcluded(ownerPtr, options))
+        {
+            continue;
         }
 
         Vec3 originOffset = ownerPtr ? owner.origin : Vec3{ 0.0, 0.0, 0.0 };
@@ -1366,6 +1477,15 @@ ParseResult parseBspClips(const char* bspPath, const ParseOptions& options)
 
         std::vector<Face>& destination = result.faces[type];
         destination.insert(destination.end(), std::make_move_iterator(faces.begin()), std::make_move_iterator(faces.end()));
+    }
+
+    // Only meaningful in strict mode: in non-strict mode these textures are drawn,
+    // so there is nothing to warn about.
+    if (options.strictInvisible)
+    {
+        std::unordered_set<std::string> suspicious;
+        map.collectSuspiciousMaterials(suspicious);
+        result.suspiciousMaterials.assign(suspicious.begin(), suspicious.end());
     }
 
     return result;

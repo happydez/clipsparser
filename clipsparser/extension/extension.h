@@ -35,9 +35,12 @@ public:
     void addMaterial(const char* substring);
     void addHammerId(int id);
     void addClassname(const char* classname);
+    void addClassnameCondition(const char* classname, const char* key, const char* value);
+    void addExcludeHammerId(int id);
     void addBrushBox(const float mins[3], const float maxs[3], int faceCount);
     void setShrink(float units);
     void setBrushTolerance(float units);
+    void setStrictParse(bool strict);
 
     int bspVersion() const
     {
