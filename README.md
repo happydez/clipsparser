@@ -1,5 +1,7 @@
 # clipsparser
 
+![Example](docs/1.jpg)
+
 Draws a map's invisible geometry (clips, nodraw brushes, ladders,
 buttons, invisible func_brush/func_wall) as coloured beams, so players
 can see exactly what they can collide with.
